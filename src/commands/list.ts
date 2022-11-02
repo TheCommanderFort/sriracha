@@ -54,10 +54,19 @@ export default async function list(message: Message, list: number, ID: number, f
 		//Query
 		if (flags?.q || flags?.qa) {
 			if (flags.q) {
-				return query(message, list, flags);
+				const results = await query(message, list, flags);
+				if (typeof results == 'string') {
+					await message.channel.send(results);
+				} else {
+					for (let i = 0; i < results.length; i++) {
+						await message.channel.send(results[i]);
+					}
+				}
+				return true;
 			}
 			if (flags.qa) {
-				return queryAll(message, flags);
+				await queryAll(message, flags);
+				return true;
 			}
 		}
 

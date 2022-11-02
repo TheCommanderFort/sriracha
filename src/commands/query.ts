@@ -46,7 +46,7 @@ export async function query(message: Message, list: number, flags: Flags) {
 	const rows = await sheets.get(name);
 
 	async function taxFraud(str: string) {
-		return message.channel.send(str.replace('``````', ''));
+		return str.replace('``````', '');
 	}
 
 	//multi query parser
@@ -65,30 +65,32 @@ export async function query(message: Message, list: number, flags: Flags) {
 	}
 
 	let count = 0;
-	const bankAccount = (debt: string, price: string[], i: number) => { //debt is our buffer string, price is the raw array of data
-		if (price) {
-			const check = new Row(price);
-			check.uid = null;
-			check.img = null;
-			check.siteTags = check.siteTags?.replaceAll(/"(characters|tags)":/gi, "");
-			price = check.toArray().map((s) => s.toString());
-			if (debt.length > 1900) { //messages are limited to 2000 characters, use 1900 to avoid issues
-				taxFraud(`\`\`\`${debt}\`\`\``); //send that shit off
-				debt = ''; //reset our string
-			}
-			if (includes(price, accounts)) {
-				debt += `${list}#${i+1} ${check.hm ?? check.nh ?? check.eh ?? check.im} ${check.title} by ${check.author}` + '\n';
-				count++;
-			}
-		}
-		return debt;
-	};
-	const beginningStr = flags.str ?? '```**Received `list` request for ' + info.sheetNames[list] + '.**\nPlease wait for all results to deliver.```';
+	const beginningStr = flags.str ?? '**Received `list` request for ' + info.sheetNames[list] + '.**\nPlease wait for all results to deliver.\n';
 	const endStr = flags.estr ?? '\nEnd of Results!';
-	const res = rows.reduce(bankAccount, beginningStr);
+	const listMessages = [beginningStr];
+	let currentMessage = '';
 
-	if (count == 0) await taxFraud(`\`\`\`${beginningStr}\nNo results in this list!\`\`\``);
-	else if (res !== '') await taxFraud(`\`\`\`${res}\`\`\` ${endStr}`);
+	for (let i = 0; i < rows.length; i++) {
+		let price = rows[i];
+		const check = new Row(price);
+		check.uid = null;
+		check.img = null;
+		check.siteTags = check.siteTags?.replaceAll(/"(characters|tags)":/gi, "");
+		price = check.toArray().map((s) => s.toString());
+		if (includes(price, accounts)) {
+			currentMessage += `${list}#${i+1} ${check.hm ?? check.nh ?? check.eh ?? check.im} ${check.title} by ${check.author}` + '\n';
+			count++;
+		}
+		if (currentMessage.length > 1900) { //messages are limited to 2000 characters, use 1900 to avoid issues
+			listMessages.push(`\`\`\`${currentMessage}\`\`\``);
+			currentMessage = ''; //reset our string
+		} else if (i == rows.length - 1) { //last iteration
+			listMessages.push(`\`\`\`${currentMessage}\`\`\`${endStr}`);
+		}
+	}
+
+	if (count == 0) return `${beginningStr}\`\`\`No results in this list!\`\`\``;
+	else return listMessages;
 }
 
 /**
@@ -97,14 +99,27 @@ export async function query(message: Message, list: number, flags: Flags) {
  * @param {*} flags
  */
 export async function queryAll(message: Message, flags: Flags) {
-	const queryLists: number[] = [1, 2, 3, 4, 6, 9];
+	const validLists: number[] = [1, 2, 3, 4, 6, 9];
+	const listMessages = [];
 
-	for (let i = 0; i < queryLists.length; i++) {
-		await query(message, queryLists[i], {
+	for (let i = 0; i < validLists.length; i++) {
+		listMessages.push(await query(message, validLists[i], {
 			q: flags.qa,
-			str: '```**Results from `' + info.sheetNames[queryLists[i] as keyof typeof info.sheetNames] + '`** ```',
+			str: '**Results from `' + info.sheetNames[validLists[i] as keyof typeof info.sheetNames] + '`**',
 			estr: '',
-		});
+		}));
 	}
-	message.channel.send('Search finished!');
+	if (listMessages.flat(1).join('\n').length < 1900) {
+		message.channel.send(listMessages.flat(1).join('\n'));
+	} else {
+		for (let i = 0; i < listMessages.length; i++) {
+			if (typeof listMessages[i] == 'object') {
+				for (let p = 0; p < listMessages[i].length; p++) {
+					await message.channel.send(listMessages[i][p]);
+				}
+			} else {
+				await message.channel.send(<string>listMessages[i]);
+			}
+		}
+	}
 }
